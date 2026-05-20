@@ -355,10 +355,7 @@ export default function App({
 
       {/* Footer */}
       <footer className="border-t border-gray-100 py-8 text-center">
-        <p className="text-sm text-gray-400">
-          Made with ❤️ for our farewell &nbsp;·&nbsp; Powered by Next.js &amp;
-          Supabase
-        </p>
+        <p className="text-sm text-gray-400">Made by iman jabbar  for our farewell ❤️</p>
       </footer>
 
       {/* Toasts */}
