@@ -21,19 +21,6 @@ if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
   process.exit(1);
 }
 
-// ── Load student list ────────────────────────────────────────────────────────
-// Dynamic import so TypeScript resolves the path alias correctly at runtime
-const { STUDENTS } = (await import("../src/config/students")) as {
-  STUDENTS: string[];
-};
-
-if (!STUDENTS || STUDENTS.length === 0) {
-  console.error("❌  No students found in src/config/students.ts");
-  process.exit(1);
-}
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
 function toSlug(name: string): string {
   return name
     .toLowerCase()
@@ -48,16 +35,6 @@ function generatePassword(firstName: string): string {
   return `${clean.charAt(0).toUpperCase()}${clean.slice(1).toLowerCase()}@${suffix}`;
 }
 
-// ── Supabase admin client (service role — never use in browser) ───────────────
-const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
-  auth: { autoRefreshToken: false, persistSession: false },
-});
-
-// ── Seed ──────────────────────────────────────────────────────────────────────
-
-console.log(`\n🎓  Farewell Voting — Seed Script`);
-console.log(`   Processing ${STUDENTS.length} students…\n`);
-
 type CredentialRow = {
   name: string;
   username: string;
@@ -65,105 +42,127 @@ type CredentialRow = {
   loginEmail: string;
 };
 
-const credentials: CredentialRow[] = [];
-const errors: string[] = [];
+async function main() {
+  // Load student list
+  const { STUDENTS } = require("../src/config/students") as { STUDENTS: string[] };
 
-for (const studentName of STUDENTS) {
-  const slug = toSlug(studentName);
-  const username = slug;
-  const firstName = studentName.trim().split(/\s+/)[0];
-  const password = generatePassword(firstName);
-  const loginEmail = `${username}@farewell.local`;
+  if (!STUDENTS || STUDENTS.length === 0) {
+    console.error("❌  No students found in src/config/students.ts");
+    process.exit(1);
+  }
 
-  try {
-    // 1. Upsert student record
-    const { data: student, error: studentErr } = await supabase
-      .from("students")
-      .upsert({ full_name: studentName, slug }, { onConflict: "slug" })
-      .select("id")
-      .single();
+  const supabase = createClient(SUPABASE_URL!, SERVICE_ROLE_KEY!, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 
-    if (studentErr) {
-      console.error(`  ✗ Student DB error [${studentName}]: ${studentErr.message}`);
-      errors.push(studentName);
-      continue;
-    }
+  console.log(`\n🎓  Farewell Voting — Seed Script`);
+  console.log(`   Processing ${STUDENTS.length} students…\n`);
 
-    // 2. Create (or skip existing) auth user
-    const { data: authData, error: authErr } =
-      await supabase.auth.admin.createUser({
-        email: loginEmail,
-        password,
-        email_confirm: true,
-        user_metadata: { username, display_name: studentName },
-      });
+  const credentials: CredentialRow[] = [];
+  const errors: string[] = [];
 
-    let authUserId: string | undefined;
+  for (const studentName of STUDENTS) {
+    const slug = toSlug(studentName);
+    const username = slug;
+    const firstName = studentName.trim().split(/\s+/)[0];
+    const password = generatePassword(firstName);
+    const loginEmail = `${username}@farewell.local`;
 
-    if (authErr) {
-      if (authErr.message.toLowerCase().includes("already been registered")) {
-        // Fetch existing user to get their ID
-        const { data: existingList } = await supabase.auth.admin.listUsers();
-        const existing = existingList?.users.find((u) => u.email === loginEmail);
-        authUserId = existing?.id;
-        console.log(`  ↻ Auth user already exists: ${studentName}`);
-      } else {
-        console.error(`  ✗ Auth error [${studentName}]: ${authErr.message}`);
+    try {
+      // 1. Upsert student record
+      const { data: student, error: studentErr } = await supabase
+        .from("students")
+        .upsert({ full_name: studentName, slug }, { onConflict: "slug" })
+        .select("id")
+        .single();
+
+      if (studentErr) {
+        console.error(`  ✗ Student DB error [${studentName}]: ${studentErr.message}`);
         errors.push(studentName);
         continue;
       }
-    } else {
-      authUserId = authData.user?.id;
-    }
 
-    if (!authUserId) {
-      console.error(`  ✗ Could not resolve auth user ID for ${studentName}`);
+      // 2. Create (or find existing) auth user
+      const { data: authData, error: authErr } =
+        await supabase.auth.admin.createUser({
+          email: loginEmail,
+          password,
+          email_confirm: true,
+          user_metadata: { username, display_name: studentName },
+        });
+
+      let authUserId: string | undefined;
+
+      if (authErr) {
+        if (authErr.message.toLowerCase().includes("already been registered")) {
+          const { data: existingList } = await supabase.auth.admin.listUsers();
+          const existing = existingList?.users.find((u) => u.email === loginEmail);
+          authUserId = existing?.id;
+          console.log(`  ↻ Already exists: ${studentName}`);
+        } else {
+          console.error(`  ✗ Auth error [${studentName}]: ${authErr.message}`);
+          errors.push(studentName);
+          continue;
+        }
+      } else {
+        authUserId = authData.user?.id;
+      }
+
+      if (!authUserId) {
+        console.error(`  ✗ Could not resolve auth user ID for ${studentName}`);
+        errors.push(studentName);
+        continue;
+      }
+
+      // 3. Upsert profile
+      const { error: profileErr } = await supabase.from("profiles").upsert(
+        {
+          auth_user_id: authUserId,
+          student_id: student.id,
+          username,
+          display_name: studentName,
+        },
+        { onConflict: "auth_user_id" }
+      );
+
+      if (profileErr) {
+        console.error(`  ✗ Profile error [${studentName}]: ${profileErr.message}`);
+        errors.push(studentName);
+        continue;
+      }
+
+      credentials.push({ name: studentName, username, password, loginEmail });
+      console.log(
+        `  ✓ ${studentName.padEnd(28)} ${username.padEnd(24)} ${password}`
+      );
+    } catch (err) {
+      console.error(`  ✗ Unexpected error [${studentName}]:`, err);
       errors.push(studentName);
-      continue;
     }
-
-    // 3. Upsert profile
-    const { error: profileErr } = await supabase.from("profiles").upsert(
-      {
-        auth_user_id: authUserId,
-        student_id: student.id,
-        username,
-        display_name: studentName,
-      },
-      { onConflict: "auth_user_id" }
-    );
-
-    if (profileErr) {
-      console.error(`  ✗ Profile error [${studentName}]: ${profileErr.message}`);
-      errors.push(studentName);
-      continue;
-    }
-
-    credentials.push({ name: studentName, username, password, loginEmail });
-    console.log(`  ✓ ${studentName.padEnd(24)} username: ${username.padEnd(20)} password: ${password}`);
-  } catch (err) {
-    console.error(`  ✗ Unexpected error [${studentName}]:`, err);
-    errors.push(studentName);
   }
+
+  // Write CSV
+  const csvLines = [
+    "Student Name,Username,Password,Login Email",
+    ...credentials.map(
+      (c) => `"${c.name}","${c.username}","${c.password}","${c.loginEmail}"`
+    ),
+  ];
+
+  const csvPath = join(process.cwd(), "generated-credentials.csv");
+  writeFileSync(csvPath, csvLines.join("\n"), "utf-8");
+
+  console.log(`\n─────────────────────────────────────────────────`);
+  console.log(`✅  Done!  ${credentials.length} student(s) created.`);
+  if (errors.length > 0) {
+    console.log(`⚠️  Errors for: ${errors.join(", ")}`);
+  }
+  console.log(`\n📄  Credentials saved to: generated-credentials.csv`);
+  console.log(`🔒  Keep that file private — do NOT commit it to git!`);
+  console.log(`─────────────────────────────────────────────────\n`);
 }
 
-// ── Write CSV ─────────────────────────────────────────────────────────────────
-
-const csvLines = [
-  "Student Name,Username,Password,Login Email",
-  ...credentials.map(
-    (c) => `"${c.name}","${c.username}","${c.password}","${c.loginEmail}"`
-  ),
-];
-
-const csvPath = join(process.cwd(), "generated-credentials.csv");
-writeFileSync(csvPath, csvLines.join("\n"), "utf-8");
-
-console.log(`\n─────────────────────────────────────────────────`);
-console.log(`✅  Done!  ${credentials.length} student(s) created.`);
-if (errors.length > 0) {
-  console.log(`⚠️  Errors for: ${errors.join(", ")}`);
-}
-console.log(`\n📄  Credentials saved to: generated-credentials.csv`);
-console.log(`🔒  Keep that file private — do NOT commit it to git!`);
-console.log(`─────────────────────────────────────────────────\n`);
+main().catch((err) => {
+  console.error("Fatal error:", err);
+  process.exit(1);
+});
