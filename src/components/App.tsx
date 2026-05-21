@@ -183,6 +183,7 @@ export default function App({
 
     // Update local state immediately
     const nicknameOptionId = data.nickname_option_id as string;
+    const currentStudent = students.find((s) => s.id === studentId);
     setMyVotesMap((prev) =>
       new Map(prev).set(studentId, { studentId, nicknameOptionId, nickname })
     );
@@ -206,6 +207,7 @@ export default function App({
             ...s.nicknames,
             {
               id: nicknameOptionId,
+              studentName: currentStudent?.fullName ?? null,
               nickname,
               voteCount: 1,
               createdByUsername: profile?.username ?? null,

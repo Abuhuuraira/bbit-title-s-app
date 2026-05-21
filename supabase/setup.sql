@@ -31,12 +31,25 @@ create table if not exists public.profiles (
 create table if not exists public.nickname_options (
   id                  uuid default uuid_generate_v4() primary key,
   student_id          uuid not null references public.students(id),
+  student_name        text not null,
   nickname            text not null,
   normalized_nickname text not null,
   created_by          uuid not null references auth.users(id),
   created_at          timestamptz default now(),
   unique(student_id, normalized_nickname)
 );
+
+alter table public.nickname_options
+  add column if not exists student_name text;
+
+update public.nickname_options no
+set student_name = s.full_name
+from public.students s
+where no.student_id = s.id
+  and no.student_name is null;
+
+alter table public.nickname_options
+  alter column student_name set not null;
 
 create table if not exists public.votes (
   id                 uuid default uuid_generate_v4() primary key,
@@ -65,34 +78,40 @@ alter table public.nickname_options enable row level security;
 alter table public.votes            enable row level security;
 
 -- Students: public read, no write via API
+drop policy if exists "students_public_read" on public.students;
 create policy "students_public_read"
   on public.students for select
   to anon, authenticated
   using (true);
 
 -- Profiles: owner can read their own
+drop policy if exists "profiles_owner_read" on public.profiles;
 create policy "profiles_owner_read"
   on public.profiles for select
   to authenticated
   using (auth_user_id = auth.uid());
 
 -- Nickname options: public read, authenticated insert only (no update/delete)
+drop policy if exists "nickname_options_public_read" on public.nickname_options;
 create policy "nickname_options_public_read"
   on public.nickname_options for select
   to anon, authenticated
   using (true);
 
+drop policy if exists "nickname_options_auth_insert" on public.nickname_options;
 create policy "nickname_options_auth_insert"
   on public.nickname_options for insert
   to authenticated
   with check (created_by = auth.uid());
 
 -- Votes: user can read their own, authenticated insert only (no update/delete)
+drop policy if exists "votes_owner_read" on public.votes;
 create policy "votes_owner_read"
   on public.votes for select
   to authenticated
   using (user_id = auth.uid());
 
+drop policy if exists "votes_auth_insert" on public.votes;
 create policy "votes_auth_insert"
   on public.votes for insert
   to authenticated
@@ -131,6 +150,7 @@ declare
   v_normalized  text;
   v_nickname_id uuid;
   v_vote_count  int;
+  v_student_name text;
 begin
   v_user_id := auth.uid();
   if v_user_id is null then
@@ -156,6 +176,14 @@ begin
     return json_build_object('success', false, 'error', 'Nickname is too long (max 60 characters).');
   end if;
 
+  select full_name into v_student_name
+  from public.students
+  where id = p_student_id;
+
+  if v_student_name is null then
+    return json_build_object('success', false, 'error', 'Student not found.');
+  end if;
+
   -- Find or create the nickname option
   select id into v_nickname_id
   from public.nickname_options
@@ -163,8 +191,8 @@ begin
     and normalized_nickname = v_normalized;
 
   if v_nickname_id is null then
-    insert into public.nickname_options (student_id, nickname, normalized_nickname, created_by)
-    values (p_student_id, trim(p_nickname), v_normalized, v_user_id)
+    insert into public.nickname_options (student_id, student_name, nickname, normalized_nickname, created_by)
+    values (p_student_id, v_student_name, trim(p_nickname), v_normalized, v_user_id)
     returning id into v_nickname_id;
   end if;
 
@@ -258,6 +286,7 @@ begin
           select json_agg(
             json_build_object(
               'id',        no.id,
+              'studentName', no.student_name,
               'nickname',  no.nickname,
               'createdByUsername', p.username,
               'createdByDisplayName', p.display_name,

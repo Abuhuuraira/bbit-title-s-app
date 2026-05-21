@@ -1,5 +1,6 @@
 export interface NicknameOption {
   id: string;
+  studentName?: string | null;
   nickname: string;
   voteCount: number;
   createdByUsername?: string | null;
