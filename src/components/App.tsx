@@ -204,7 +204,13 @@ export default function App({
           ...s,
           nicknames: [
             ...s.nicknames,
-            { id: nicknameOptionId, nickname, voteCount: 1 },
+            {
+              id: nicknameOptionId,
+              nickname,
+              voteCount: 1,
+              createdByUsername: profile?.username ?? null,
+              createdByDisplayName: profile?.displayName ?? null,
+            },
           ],
         };
       })

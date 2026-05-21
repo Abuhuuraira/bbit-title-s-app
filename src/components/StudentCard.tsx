@@ -226,6 +226,11 @@ function NicknameRow({
               ✓ yours
             </span>
           )}
+          {(option.createdByDisplayName || option.createdByUsername) && (
+            <span className="block mt-0.5 text-xs font-normal text-gray-500">
+              by {option.createdByDisplayName ?? option.createdByUsername}
+            </span>
+          )}
         </span>
 
         {/* Vote count */}

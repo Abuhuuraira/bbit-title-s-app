@@ -2,6 +2,8 @@ export interface NicknameOption {
   id: string;
   nickname: string;
   voteCount: number;
+  createdByUsername?: string | null;
+  createdByDisplayName?: string | null;
 }
 
 export interface StudentResult {

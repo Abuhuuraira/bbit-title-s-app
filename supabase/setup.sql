@@ -259,6 +259,8 @@ begin
             json_build_object(
               'id',        no.id,
               'nickname',  no.nickname,
+              'createdByUsername', p.username,
+              'createdByDisplayName', p.display_name,
               'voteCount', (
                 select count(*)
                 from public.votes v
@@ -272,6 +274,7 @@ begin
             ) desc, no.created_at asc
           )
           from public.nickname_options no
+          left join public.profiles p on p.auth_user_id = no.created_by
           where no.student_id = s.id
         ),
         '[]'::json
