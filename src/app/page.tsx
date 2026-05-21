@@ -1,10 +1,14 @@
 import { createClient } from "@/lib/supabase-server";
+import { verifyAdminAuth } from "@/lib/admin-auth";
 import type { StudentResult, UserVote, Profile } from "@/lib/types";
 import App from "@/components/App";
 
 export const revalidate = 0; // always fresh
 
 export default async function HomePage() {
+  // Verify admin authentication server-side
+  verifyAdminAuth();
+
   const supabase = createClient();
 
   // Fetch public students + nicknames (works for everyone, including anon)

@@ -9,18 +9,23 @@ type CookieToSet = {
 
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
-
-  // Allow admin-login and API routes without admin check
-  if (pathname.startsWith("/admin-login") || pathname.startsWith("/api/admin-login")) {
-    return NextResponse.next({ request });
-  }
-
-  // Check for valid admin session on protected routes
   const adminAuth = request.cookies.get("admin_auth")?.value;
-  if (!adminAuth) {
+
+  // Public routes that don't need admin auth
+  const publicRoutes = ["/admin-login", "/api/admin-login", "/api/admin-logout"];
+  const isPublicRoute = publicRoutes.some((route) => pathname.startsWith(route));
+
+  // If not authenticated and trying to access protected route, redirect to admin login
+  if (!isPublicRoute && !adminAuth) {
     return NextResponse.redirect(new URL("/admin-login", request.url));
   }
 
+  // For public routes, skip Supabase auth and return directly
+  if (isPublicRoute) {
+    return NextResponse.next({ request });
+  }
+
+  // For protected routes with valid admin auth, proceed with Supabase auth
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
