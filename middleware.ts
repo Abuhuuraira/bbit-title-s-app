@@ -8,6 +8,19 @@ type CookieToSet = {
 };
 
 export async function middleware(request: NextRequest) {
+  const pathname = request.nextUrl.pathname;
+
+  // Allow admin-login and API routes without admin check
+  if (pathname.startsWith("/admin-login") || pathname.startsWith("/api/admin-login")) {
+    return NextResponse.next({ request });
+  }
+
+  // Check for valid admin session on protected routes
+  const adminAuth = request.cookies.get("admin_auth")?.value;
+  if (!adminAuth) {
+    return NextResponse.redirect(new URL("/admin-login", request.url));
+  }
+
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(

@@ -21,6 +21,12 @@ export default function Header({ user, profile, onLogout }: HeaderProps) {
     router.refresh();
   }
 
+  async function handleAdminLogout() {
+    await fetch("/api/admin-logout", { method: "POST" });
+    router.push("/admin-login");
+    router.refresh();
+  }
+
   return (
     <>
       <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-gray-100 shadow-sm">
@@ -69,6 +75,15 @@ export default function Header({ user, profile, onLogout }: HeaderProps) {
                 Sign in to vote
               </Link>
             )}
+            <button
+              onClick={handleAdminLogout}
+              className="btn-ghost text-sm px-3 py-1.5 text-gray-500 hover:text-gray-700"
+              title="Exit admin access"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </button>
           </div>
         </div>
       </div>
